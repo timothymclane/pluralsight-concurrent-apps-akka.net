@@ -6,6 +6,10 @@ type PlaybackMessage = {
     UserId: int
 }
 
+type StopMovieMessage = {
+    Stop: string
+}
+
 module Actors =
     open Akka.FSharp.Actors
     open Akka.Actor
@@ -44,6 +48,29 @@ module Actors =
             printfn "ObjectPlaybackActor PostRestart because %A" reason
             base.PostRestart reason
 
+    type ObjectUserActor() =
+        inherit ReceiveActor()
+        let mutable _currentlyWatching = ""
+        let startPlayingMovie title =
+            _currentlyWatching <- title
+            printfn "User is currently watching %A" title
+        let stopPlayingCurrentMovie() =
+            printfn "Stopping user movie %A" _currentlyWatching
+            _currentlyWatching <- String.Empty
+        let handlePlayMovieMessage msg =
+            if(not <| String.IsNullOrWhiteSpace _currentlyWatching)
+                then printfn "Cannot start playing another movie without stopping one currently playing"
+            else
+                startPlayingMovie msg.MovieTitle
+        let handleStopMovieMessage msg =
+            if(String.IsNullOrWhiteSpace _currentlyWatching)
+                then printfn "Cannot stop playing movie when one is not playing"
+            else
+                stopPlayingCurrentMovie()
+        do
+            base.Receive<PlaybackMessage> handlePlayMovieMessage
+            base.Receive<StopMovieMessage> handleStopMovieMessage
+
 module Program =
     open System
     open Actors
@@ -67,6 +94,13 @@ module Program =
         simplePlaybackActor <! { MovieTitle = "Akka.NET of Things Returns and Strikes Back Again"; UserId = 44}
 
         objectPlaybackActor <! PoisonPill.Instance
+
+        let userActor = spawnObj system "user-playback-actor" (<@ (fun () -> new ObjectUserActor()) @>)
+        userActor <! { MovieTitle = "Akka.NET of Things Strikes Back"; UserId = 43}
+        userActor <! { MovieTitle = "Akka.NET of Things Strikes Back Again"; UserId = 43}
+        Console.ReadLine() |> ignore
+        printfn "Trying to stop movie"
+        userActor <! {Stop = "Stop!"}
 
         Console.ReadLine() |> ignore
         system.Terminate() |> Async.AwaitIAsyncResult |> ignore
